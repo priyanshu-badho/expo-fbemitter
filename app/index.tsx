@@ -3,18 +3,19 @@ import { Text, View, Button, StyleSheet, FlatList } from "react-native";
 import * as BackgroundFetch from "expo-background-fetch";
 import * as TaskManager from "expo-task-manager";
 import { EventEmitter } from "fbemitter";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const emitter = new EventEmitter();
 const QUEUE_EVENT = "QUEUE_API_EVENT";
 const BACKGROUND_TASK = "EXECUTE_QUEUED_EVENTS";
 
-let eventQueue: string[] = [];
-
 TaskManager.defineTask(BACKGROUND_TASK, async () => {
   console.log("[Background Fetch Triggered]");
+  const eventQueueString = await AsyncStorage.getItem("eventQueue");
+  const eventQueue = eventQueueString ? JSON.parse(eventQueueString) : [];
   if (eventQueue.length >= 5) {
     console.log(`✅ Sending ${eventQueue.length} queued events:`);
-    eventQueue = []; // Clear queue
+    await AsyncStorage.removeItem("eventQueue");
     return BackgroundFetch.BackgroundFetchResult.NewData;
   } else {
     console.log(
@@ -52,8 +53,21 @@ export default function App() {
   useEffect(() => {
     const subscription = emitter.addListener(QUEUE_EVENT, (event: string) => {
       console.log("➕ Queued event:", event);
-      eventQueue.push(event);
-      setEvents([...eventQueue]);
+      setEvents((prevEvents) => [...prevEvents, event]);
+      AsyncStorage.getItem("eventQueue")
+        .then((eventQueueString) => {
+          const eventQueue = eventQueueString
+            ? JSON.parse(eventQueueString)
+            : [];
+          eventQueue.push(event);
+          return AsyncStorage.setItem("eventQueue", JSON.stringify(eventQueue));
+        })
+        .then(() => {
+          console.log("Event added to queue:", event);
+        })
+        .catch((error) => {
+          console.error("Error adding event to queue:", error);
+        });
     });
 
     return () => subscription.remove();
